@@ -14,15 +14,24 @@
 input string Basic1="------------------------------";// :::::::::::::::: Money Management ::
 extern double LOT_SIZE = 0.01;
 extern double AVG_SPREAD = 3;
-extern double BREAK_ABOVE_FOR_SL = 0.15;
+//extern double BREAK_ABOVE_FOR_SL = 0.15;
 extern int BREAK_ABOVE_RATIO = 1;
 input string spacer1 = " ";// |
 
+input string Basic2=" Order Type Should Be Against The Trend ";// :::::::::::::::: Pending Orders ::
+extern bool BUY_STOPS = true;
+extern bool SELL_STOPS = true;
+extern bool DIRECT_BUY_ORDERS = true;
+extern bool DIRECT_SELL_ORDERS = true;
+extern double REWARD_MULTIPLIER = 2;
+extern double STOP_ORDER_REWARD_MULTIPLIER = 1;
+extern double STOP_ORDER_RISK_DEVIDER = 2;
+input string spacer2 = " ";// |
 
 int OnInit()
   {
 //---
-   
+
 //---
    return(INIT_SUCCEEDED);
   }
@@ -32,13 +41,14 @@ int OnInit()
 void OnDeinit(const int reason)
   {
 //---
-   
+
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick() {
 	static int bar = 0;
+	static int stopOrder = 0;
 	if(isNewBar()) {
 		if(!hasOpenOrder()) {
 			bar = 0;
@@ -47,7 +57,7 @@ void OnTick() {
 			}
 
 			if(pinBarFinder() < Bid) {
-				// pinBarSell(pinBarFinder());
+				pinBarBuy(pinBarFinder());
 			}
 		} else {
 			//*
@@ -56,12 +66,12 @@ void OnTick() {
 			OrderSelect( ticket, SELECT_BY_TICKET);
 
 			// close sell orders
-			if(bar > bottomFractalIndex(1) && OrderType() == OP_SELL) {
+			if(bar > bottomFractalIndex(1) && OrderType() == OP_SELL && OrderProfit() > 0) {
 				closeOrders();
 			}
 
 			// close buy orders
-			if(bar > topFractalIndex(1) && OrderType() == OP_BUY) {
+			if(bar > topFractalIndex(1) && OrderType() == OP_BUY && OrderProfit() > 0) {
 				closeOrders();
 			}
 			//*/
@@ -75,7 +85,7 @@ void OnTick() {
 
 
 
-void pinBarSell(double pinBarEnd) {
+int pinBarSell(double pinBarEnd) {
    double order = 0;
    double tp = 0;
    double sl = 0;
@@ -88,26 +98,39 @@ void pinBarSell(double pinBarEnd) {
    double bs_tp = 0;
    double bs_op = 0;
 
+   int sell = 0;
+   int buyStop = 0;
+
    int fracRef = bottomFractalIndex(1);
    double fractal = bottomFractal(fracRef);
 
-   
+
 
 	order = Open[0];
 	sl = pinBarEnd + spread;
 	risk = MathFloor((sl - order) / Point()) * Point();
-	reward = (risk * 2) - spread;
+	reward = (risk * REWARD_MULTIPLIER) - spread;
 	tp = order - reward;
 
-	bs_sl = pinBarEnd - (risk + pip);
-	bs_tp = pinBarEnd + (risk + pip);
+	bs_sl = pinBarEnd - ((risk + pip) / STOP_ORDER_RISK_DEVIDER);
+	bs_tp = pinBarEnd + (risk * STOP_ORDER_REWARD_MULTIPLIER) + spread;
 	bs_op = pinBarEnd + pip;
 
 	if(fracRef != 1) {
-		int sell = sellOrder(sl, tp);
-		int buyStop = buyStop(bs_op, bs_sl, bs_tp);
-		orderFailSafe(sell);
-		orderFailSafe(buyStop);
+
+		if(DIRECT_SELL_ORDERS) {
+			sell = sellOrder(sl, tp);
+			orderFailSafe(sell);
+		}
+
+
+		if(BUY_STOPS) {
+			buyStop = buyStop(bs_op, bs_sl, bs_tp);
+			orderFailSafe(buyStop);
+
+			// close sell stops above this new buy stop
+			closePendingOrders(OP_SELLSTOP, bs_op);
+		}
 
 		Comment(
 			"SELL at: ", order,
@@ -118,11 +141,11 @@ void pinBarSell(double pinBarEnd) {
 			"\nReward in PIPs: ", (reward / (Point() * 10))
 		);
 	}
-	
+	return buyStop;
 }
 
 
-void pinBarBuy( double pinBarEnd) {
+int pinBarBuy( double pinBarEnd) {
 	double order = 0;
 	double tp = 0;
 	double sl = 0;
@@ -130,6 +153,9 @@ void pinBarBuy( double pinBarEnd) {
 	double spread = (AVG_SPREAD * Point() * 10);
 	double risk = 0;
 	double reward = 0;
+
+	int buy = 0;
+	int sellStop = 0;
 
 	double ss_sl = 0;
    	double ss_tp = 0;
@@ -142,19 +168,27 @@ void pinBarBuy( double pinBarEnd) {
 	sl = pinBarEnd - spread;
 
 	risk = MathFloor((order - sl) / Point()) * Point();
-	reward = (risk * 2) + spread;
+	reward = (risk * REWARD_MULTIPLIER) + spread;
 	tp = order + reward;
 
-	ss_sl = pinBarEnd + (risk + pip);
-	ss_tp = pinBarEnd - (risk + pip);
+	ss_sl = pinBarEnd + ((risk + pip) / STOP_ORDER_RISK_DEVIDER);
+	ss_tp = pinBarEnd - (risk * STOP_ORDER_REWARD_MULTIPLIER) - spread;
 	ss_op = pinBarEnd - pip;
 
 
 	if(fracRef != 1) {
-		int buy = buyOrder(sl, tp);
-		int sellStop = sellStop(ss_op, ss_sl, ss_tp);
-		orderFailSafe(buy);
-		orderFailSafe(sellStop);
+
+		if(DIRECT_SELL_ORDERS) {
+			buy = buyOrder(sl, tp);
+			orderFailSafe(buy);
+		}
+
+		if(SELL_STOPS) {
+			sellStop = sellStop(ss_op, ss_sl, ss_tp);
+			orderFailSafe(sellStop);
+			// close sell stops above this new buy stop
+			closePendingOrders(OP_BUYSTOP, ss_op);
+		}
 
 		Comment(
 			"BUY at: ", Open[0],
@@ -165,6 +199,7 @@ void pinBarBuy( double pinBarEnd) {
 			"\nReward in PIPs: ", (reward / (Point() * 10))
 		);
 	}
+	return sellStop;
 }
 
 
@@ -257,12 +292,17 @@ int pinBar(int bar) {
 		nose = topWick;
 	}
 
-	isPinBar = ((pinBar / bodyAndNose) >= 2.5);
+	isPinBar = ((pinBar / bodyAndNose) > 2.5);
 	hasNose = true;
 
-	if(isPinBar && hasNose && pinBar == bottomWick) {
+	// only use the last pin bar that is a fractal
+	if(bar == 2) {
+
+	}
+
+	if(isPinBar && hasNose && pinBar == bottomWick && High[bar] == High[2]) {
 		result = 2;
-	} else if(isPinBar && hasNose && pinBar == topWick) {
+	} else if(isPinBar && hasNose && pinBar == topWick && Low[bar] == Low[2]) {
 		result = 4;
 	}
 	return result;
@@ -286,7 +326,7 @@ int topFractalIndex(int index) {
 	int bar = 0;
 	for( int i = index; i <  Bars; i++ ){
 		lastFractal = iFractals(NULL,0,MODE_UPPER,i);
-		
+
 		if(lastFractal != 0) {
 			bar = i;
 			break;
@@ -307,7 +347,7 @@ int bottomFractalIndex(int index) {
 	int bar = 0;
 	for( int i = index; i <  Bars; i++ ){
 		lastFractal = iFractals(NULL,0,MODE_LOWER,i);
-		
+
 		if(lastFractal != 0) {
 			bar = i;
 			break;
@@ -435,7 +475,7 @@ void breakEven() {
             isOneToOne = true;
          }
       }
-      
+
       if(isOneToOne) {
          adjustStoploss(newStopLoss);
       }
@@ -451,7 +491,7 @@ void adjustStoploss(double stopLoss) {
 
    bool modify = OrderModify(
       ticket, // ticket
-      OrderOpenPrice(), 
+      OrderOpenPrice(),
       stopLoss,
       OrderTakeProfit(),
       0,
@@ -528,7 +568,16 @@ void closeDirectOrders(int index) {
 
    bool allOrders = OrderSelect(index, SELECT_BY_POS);
 
+   // switch case would be better for this
    if(OrderType() == OP_BUY) {
+      bool closed = OrderClose(
+         OrderTicket(),      // ticket
+         OrderLots(),        // volume
+         Bid,       // close price
+         10,    // slippage
+         clrViolet  // color
+      );
+   } else if(OrderType() == OP_BUYSTOP) {
       bool closed = OrderClose(
          OrderTicket(),      // ticket
          OrderLots(),        // volume
@@ -544,7 +593,15 @@ void closeDirectOrders(int index) {
          10,    // slippage
          clrViolet  // color
       );
-   }
+   } else if(OrderType() == OP_SELLSTOP) {
+      bool closed = OrderClose(
+         OrderTicket(),      // ticket
+         OrderLots(),        // volume
+         Ask,       // close price
+         10,    // slippage
+         clrViolet  // color
+      );
+  	}
 }
 
 
@@ -659,3 +716,43 @@ int buyStop(double price, double stopLoss, double takeProfit) {
 }
 
 
+
+
+
+
+
+void closePendingOrders(int marketOrder, double priceLevel) {
+   int ticket = 0;
+   string pair = Symbol();
+   int totalOrders = OrdersTotal();
+
+   double profit = 0.0;
+   string symbol = "";
+
+	for( int i = 0; i < totalOrders; i++ ){
+		bool order = OrderSelect(i, SELECT_BY_POS);
+
+		bool pendingType = (OrderType() == marketOrder);
+
+		// all relative to selected order
+		symbol = OrderSymbol();
+		profit = OrderProfit();
+		bool chartHasPendingOrder = (symbol == pair && profit == 0.0 && pendingType);
+
+		if(marketOrder == OP_SELLSTOP && OrderType() == OP_SELLSTOP && chartHasPendingOrder) {
+			if(OrderOpenPrice() < priceLevel) {
+				ticket = OrderTicket();
+				bool orderRemoved = OrderDelete(ticket);
+				lookUpOrderFailSafe(orderRemoved, i);
+			}
+		}
+
+		if(marketOrder == OP_BUYSTOP && OrderType() == OP_BUYSTOP && chartHasPendingOrder) {
+			if(OrderOpenPrice() > priceLevel) {
+				ticket = OrderTicket();
+				bool orderRemoved = OrderDelete(ticket);
+				lookUpOrderFailSafe(orderRemoved, i);
+			}
+		}
+	} // for loop
+}
