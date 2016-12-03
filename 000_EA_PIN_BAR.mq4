@@ -25,7 +25,7 @@ extern bool DIRECT_BUY_ORDERS = true;
 extern bool DIRECT_SELL_ORDERS = true;
 extern double REWARD_MULTIPLIER = 2;
 extern double STOP_ORDER_REWARD_MULTIPLIER = 1;
-extern double STOP_ORDER_RISK_DEVIDER = 2;
+extern double STOP_ORDER_RISK_DIVIDER = 2;
 input string spacer2 = " ";// |
 
 int OnInit()
@@ -112,7 +112,7 @@ int pinBarSell(double pinBarEnd) {
 	reward = (risk * REWARD_MULTIPLIER) - spread;
 	tp = order - reward;
 
-	bs_sl = pinBarEnd - ((risk + pip) / STOP_ORDER_RISK_DEVIDER);
+	bs_sl = pinBarEnd - ((risk + pip) / STOP_ORDER_RISK_DIVIDER);
 	bs_tp = pinBarEnd + (risk * STOP_ORDER_REWARD_MULTIPLIER) + spread;
 	bs_op = pinBarEnd + pip;
 
@@ -171,7 +171,7 @@ int pinBarBuy( double pinBarEnd) {
 	reward = (risk * REWARD_MULTIPLIER) + spread;
 	tp = order + reward;
 
-	ss_sl = pinBarEnd + ((risk + pip) / STOP_ORDER_RISK_DEVIDER);
+	ss_sl = pinBarEnd + ((risk + pip) / STOP_ORDER_RISK_DIVIDER);
 	ss_tp = pinBarEnd - (risk * STOP_ORDER_REWARD_MULTIPLIER) - spread;
 	ss_op = pinBarEnd - pip;
 
