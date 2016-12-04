@@ -15,6 +15,7 @@ extern double AVG_SPREAD = 3;
 extern int BREAK_ABOVE_RATIO = 2;
 extern bool AUTO_ADJUST_LOT_SIZE = true;
 extern double ACCOUNT_PERCENT_RISK_FOR_AUTO_LOTS = 2;
+extern bool SAFELY_CLOSE_CHART_POSITIONS = false;
 input string spacer1 = " ";// |
 
 input string Basic2=" Order Type Should Be Against The Trend ";// :::::::::::::::: Pending Orders ::
@@ -33,7 +34,7 @@ input string spacer2 = " ";// |
 int OnInit()
   {
 //---
-   
+
 //---
    return(INIT_SUCCEEDED);
   }
@@ -43,7 +44,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
 //---
-   
+
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
@@ -52,31 +53,41 @@ void OnTick() {
 
 	static int bar = 0;
 	static int stopOrder = 0;
-	if(isNewBar()) {
-		//if(!hasOpenOrder()) {
-			bar = 0;
 
-         // make orders around the current price
-			buildGrid();
-		// close orders when an opposing fractal shows up
-		} else {
-			//*
-			bar++;
-			int ticket = openOrderTicket();
-			OrderSelect( ticket, SELECT_BY_TICKET);
+   // safely remove all pending orders from chart and wait for open positions to close
+   if(SAFELY_CLOSE_CHART_POSITIONS) {
+         closePendingOrders(OP_BUYSTOP, Ask, true);
+         closePendingOrders(OP_SELLSTOP, Bid, true);
 
-			// close sell orders
-			if(bar > bottomFractalIndex(1) && OrderType() == OP_SELLSTOP && OrderProfit() > 0) {
-				//closeOrders();
-			}
+   // run EA as normal
+   } else {
+      if(isNewBar()) {
+         //if(!hasOpenOrder()) {
+            bar = 0;
 
-			// close buy orders
-			if(bar > topFractalIndex(1) && OrderType() == OP_BUYSTOP && OrderProfit() > 0) {
-				//closeOrders();
-			}
-			//*/
-		//}// has order
-   } // new bar if
+            // make orders around the current price
+            buildGrid();
+         // close orders when an opposing fractal shows up
+      } else {
+         //*
+         bar++;
+         int ticket = openOrderTicket();
+         OrderSelect( ticket, SELECT_BY_TICKET);
+
+         // close sell orders
+         if(bar > bottomFractalIndex(1) && OrderType() == OP_SELLSTOP && OrderProfit() > 0) {
+            //closeOrders();
+         }
+
+         // close buy orders
+         if(bar > topFractalIndex(1) && OrderType() == OP_BUYSTOP && OrderProfit() > 0) {
+            //closeOrders();
+         }
+         //*/
+         //}// has order
+      } // new bar if
+   }
+
 
    breakEven();
 }
@@ -140,7 +151,7 @@ void buildGrid() {
 
 	for( int i = 1; i < 3; i++ ){
 		grindLine = ((pips10 * i) / 2);
-		
+
 		if(bottomFrac1 < bottomFrac2) {
 			op = Bid - grindLine;
 			sl = (op - pip) + grindLine;
@@ -184,11 +195,12 @@ bool isNewBar() {
       // update bar time for next iteration of code
       lastBarTime = Time[0];
    }
-
+   /*
    // prevent EA from trading on the first Friday of the month
    if(isFirstFirdayOfMonth) {
       result = false;
    }
+   */
    return result;
 }
 
@@ -285,7 +297,7 @@ void breakEven() {
             isOneToOne = true;
          }
       }
-      
+
       if(isOneToOne) {
          adjustStoploss(newStopLoss);
       }
@@ -301,7 +313,7 @@ void adjustStoploss(double stopLoss) {
 
    bool modify = OrderModify(
       ticket, // ticket
-      OrderOpenPrice(), 
+      OrderOpenPrice(),
       stopLoss,
       OrderTakeProfit(),
       0,
@@ -438,7 +450,7 @@ void closePendingOrders(int marketOrder, double priceLevel, bool allOrders = fal
 
    double profit = 0.0;
    string symbol = "";
-   
+
 	for( int i = 0; i < totalOrders; i++ ){
 		bool order = OrderSelect(i, SELECT_BY_POS);
 
@@ -466,13 +478,13 @@ void closePendingOrders(int marketOrder, double priceLevel, bool allOrders = fal
 				ticket = OrderTicket();
 				bool orderRemoved = OrderDelete(ticket);
 				lookUpOrderFailSafe(orderRemoved, i);
-			} 
+			}
 		} else if(marketOrder == OP_BUYSTOP && OrderType() == OP_SELLSTOP && chartHasPendingOrder) {
          if(OrderOpenPrice() > priceLevel  && !allOrders) {
             ticket = OrderTicket();
             bool orderRemoved = OrderDelete(ticket);
             lookUpOrderFailSafe(orderRemoved, i);
-         } 
+         }
       }
 	} // for loop
 }
@@ -488,7 +500,7 @@ int topFractalIndex(int index) {
 	int bar = 0;
 	for( int i = index; i <  Bars; i++ ){
 		lastFractal = iFractals(NULL,0,MODE_UPPER,i);
-		
+
 		if(lastFractal != 0) {
 			bar = i;
 			break;
@@ -509,7 +521,7 @@ int bottomFractalIndex(int index) {
 	int bar = 0;
 	for( int i = index; i <  Bars; i++ ){
 		lastFractal = iFractals(NULL,0,MODE_LOWER,i);
-		
+
 		if(lastFractal != 0) {
 			bar = i;
 			break;
@@ -591,16 +603,10 @@ double autoLotSize() {
 
    Comment(
       "Acct. size: ", currentAccountSize,
-      "\n2% of account: ", riskPercent,
+      "\n", risk, "% of account: ", riskPercent,
       "\nMax rist in lots: ", newlotSize
    );
 
    result = newlotSize;
    return result;
 }
-
-
-
-
-
-
